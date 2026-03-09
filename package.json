@@ -1,0 +1,14 @@
+{
+    "name": "line-order-bot",
+    "version": "1.0.0",
+    "description": "LINE Messaging API webhook bot for order image collection",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "@line/bot-sdk": "^9.6.0",
+        "express": "^4.21.0",
+        "dotenv": "^16.4.5"
+    }
+}
