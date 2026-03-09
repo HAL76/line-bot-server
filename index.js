@@ -70,6 +70,14 @@ app.get('/api/config', (req, res) => {
 // 設定の更新
 app.use('/api/config', express.json());
 app.post('/api/config', (req, res) => {
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234'; // 環境変数から取得、なければデフォルト
+
+    // パスワードチェック
+    if (req.body.password !== adminPassword) {
+        console.log('❌ Unauthorized config update attempt');
+        return res.status(401).json({ error: 'パスワードが間違っています' });
+    }
+
     if (req.body.photoReplyMessage !== undefined) {
         currentConfig.photoReplyMessage = req.body.photoReplyMessage;
     }
