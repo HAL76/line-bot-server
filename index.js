@@ -135,7 +135,7 @@ app.get('/api/auth/setup', async (req, res) => {
         }
 
         // アプリからのAPIアクセスの場合はJSON
-        res.json({ success: true, qr: qrImageUrl, secret });
+        res.json({ success: true, qr: qrImageUrl, secret, otpUrl: otpauthUrl });
     } catch (e) {
         console.error('Failed to generate TOTP QR:', e);
         if (req.accepts('html')) return res.status(500).send('エラーが発生しました');
