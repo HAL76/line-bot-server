@@ -34,6 +34,7 @@ const QRCode = require('qrcode');
 
 // otplibの実装
 const { authenticator } = require('@otplib/preset-default');
+authenticator.options = { window: 1 }; // サーバーとの時間ズレを許容 (±30秒)
 
 const configPath = path.join(__dirname, 'config.json');
 
