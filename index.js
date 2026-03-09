@@ -107,7 +107,8 @@ app.get('/api/auth/setup', async (req, res) => {
         const qrImageUrl = await QRCode.toDataURL(otpauthUrl);
 
         // ブラウザから直接アクセスされた場合はHTML画面を返す
-        if (req.accepts('html')) {
+        // fetch()のような */* ではJSONを優先するため、配列で判定
+        if (req.accepts(['json', 'html']) === 'html') {
             return res.send(`
                 <!DOCTYPE html>
                 <html lang="ja">
