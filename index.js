@@ -92,9 +92,39 @@ app.get('/api/auth/setup', async (req, res) => {
 
     try {
         const qrImageUrl = await QRCode.toDataURL(otpauthUrl);
+
+        // ブラウザから直接アクセスされた場合はHTML画面を返す
+        if (req.accepts('html')) {
+            return res.send(`
+                <!DOCTYPE html>
+                <html lang="ja">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>TOTP 初期設定</title>
+                    <style>
+                        body { font-family: sans-serif; background: #0f1724; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+                        .card { background: white; color: #333; padding: 32px; border-radius: 12px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                        img { max-width: 250px; margin: 16px 0; }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <h2>🔒 認証アプリの設定</h2>
+                        <p>Google Authenticator 等で以下のQRコードを読み取ってください。</p>
+                        <img src="${qrImageUrl}" alt="TOTP QR Code">
+                        <p style="font-size: 0.85rem; color: #666;">読み取ったら、元のQRコード生成ページに戻って<br>アプリに表示された6桁の数字を入力してください。</p>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+
+        // アプリからのAPIアクセスの場合はJSON
         res.json({ success: true, qr: qrImageUrl, secret });
     } catch (e) {
         console.error('Failed to generate TOTP QR:', e);
+        if (req.accepts('html')) return res.status(500).send('エラーが発生しました');
         res.status(500).json({ error: 'QRコードの生成に失敗しました' });
     }
 });
