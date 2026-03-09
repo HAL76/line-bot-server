@@ -30,12 +30,22 @@ app.use((req, res, next) => {
 // ==========================================
 const fs = require('fs');
 const path = require('path');
+const { authenticator } = require('otplib');
+const QRCode = require('qrcode');
+
 const configPath = path.join(__dirname, 'config.json');
 
 const defaultConfig = {
     photoReplyMessage: '📷 画像を受け取りました！ありがとうございます。\n他にも画像があれば続けて送ってください。',
     orderMessageTemplate: '📋 注文番号: {orderId}\n\n📷 この後に画像を送ってください。\n複数枚でも OK です。\n\nご利用ありがとうございます。',
+    totpSecret: null // Google Authenticatorの秘密鍵
 };
+
+// ==========================================
+// 簡易セッショントークン（メモリ管理: 再起動でリセットされるが静的ページ用としては十分）
+// ==========================================
+const validTokens = new Set();
+const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24時間
 
 // 設定を読み込む関数
 function loadConfig() {
@@ -62,20 +72,77 @@ function saveConfig(configData) {
 // 起動時にロード
 let currentConfig = loadConfig();
 
-// 設定の取得
+// ==========================================
+// TOTP 認証関連のエンドポイント
+// ==========================================
+
+// 1. 初回設定（秘密鍵の生成とQRコードの返却）
+app.get('/api/auth/setup', async (req, res) => {
+    // 既に設定済みの場合は既存のシークレットを返す（再設定用）
+    const secret = currentConfig.totpSecret || authenticator.generateSecret();
+
+    if (!currentConfig.totpSecret) {
+        currentConfig.totpSecret = secret;
+        saveConfig(currentConfig);
+    }
+
+    const otpauthUrl = authenticator.keyuri('Admin', 'LINE Order System', secret);
+
+    try {
+        const qrImageUrl = await QRCode.toDataURL(otpauthUrl);
+        res.json({ success: true, qr: qrImageUrl, secret });
+    } catch (e) {
+        console.error('Failed to generate TOTP QR:', e);
+        res.status(500).json({ error: 'QRコードの生成に失敗しました' });
+    }
+});
+
+// 2. 認証（Authenticatorの6桁コードを検証してトークンを発行）
+app.use('/api/auth/verify', express.json());
+app.post('/api/auth/verify', (req, res) => {
+    const { token } = req.body; // 6桁のコード
+
+    if (!currentConfig.totpSecret) {
+        return res.status(400).json({ error: 'まだ初期設定が完了していません' });
+    }
+
+    try {
+        const isValid = authenticator.verify({ token, secret: currentConfig.totpSecret });
+        if (isValid) {
+            // ランダムな認証済みトークンを発行
+            const sessionToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+            validTokens.add(sessionToken);
+
+            // 24時間後に無効化
+            setTimeout(() => validTokens.delete(sessionToken), TOKEN_EXPIRY_MS);
+
+            return res.json({ success: true, sessionToken });
+        }
+    } catch (e) {
+        console.error('TOTP verification error:', e);
+    }
+
+    return res.status(401).json({ error: 'コードが正しくありません' });
+});
+
+// 設定の取得 (認証不要・UI表示用)
 app.get('/api/config', (req, res) => {
-    res.json(currentConfig);
+    // シークレットは返さない
+    const safeConfig = { ...currentConfig };
+    delete safeConfig.totpSecret;
+    res.json(safeConfig);
 });
 
 // 設定の更新
 app.use('/api/config', express.json());
 app.post('/api/config', (req, res) => {
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234'; // 環境変数から取得、なければデフォルト
+    // 簡易トークンチェック
+    const authHeader = req.headers.authorization;
+    const sessionToken = authHeader && authHeader.split(' ')[1];
 
-    // パスワードチェック
-    if (req.body.password !== adminPassword) {
+    if (!sessionToken || !validTokens.has(sessionToken)) {
         console.log('❌ Unauthorized config update attempt');
-        return res.status(401).json({ error: 'パスワードが間違っています' });
+        return res.status(401).json({ error: '認証の有効期限が切れています' });
     }
 
     if (req.body.photoReplyMessage !== undefined) {
@@ -86,7 +153,10 @@ app.post('/api/config', (req, res) => {
     }
     saveConfig(currentConfig);
     console.log('✅ Config updated and saved');
-    res.json({ success: true, config: currentConfig });
+    // シークレットは返さない
+    const safeConfig = { ...currentConfig };
+    delete safeConfig.totpSecret;
+    res.json({ success: true, config: safeConfig });
 });
 
 // ==========================================
