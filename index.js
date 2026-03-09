@@ -33,7 +33,7 @@ const path = require('path');
 const QRCode = require('qrcode');
 
 // otplibの実装
-const { generateSecret, generateURI, verify } = require('otplib');
+const { authenticator } = require('@otplib/preset-default');
 
 const configPath = path.join(__dirname, 'config.json');
 
@@ -81,14 +81,14 @@ let currentConfig = loadConfig();
 // 1. 初回設定（秘密鍵の生成とQRコードの返却）
 app.get('/api/auth/setup', async (req, res) => {
     // 既に設定済みの場合は既存のシークレットを返す（再設定用）
-    const secret = currentConfig.totpSecret || generateSecret();
+    const secret = currentConfig.totpSecret || authenticator.generateSecret();
 
     if (!currentConfig.totpSecret) {
         currentConfig.totpSecret = secret;
         saveConfig(currentConfig);
     }
 
-    const otpauthUrl = generateURI({ accountName: 'Admin', issuer: 'LINE Order System', secret });
+    const otpauthUrl = authenticator.keyuri('Admin', 'LINE Order System', secret);
 
     try {
         const qrImageUrl = await QRCode.toDataURL(otpauthUrl);
@@ -139,7 +139,7 @@ app.post('/api/auth/verify', (req, res) => {
     }
 
     try {
-        const isValid = verify({ token, secret: currentConfig.totpSecret });
+        const isValid = authenticator.verify({ token, secret: currentConfig.totpSecret });
         if (isValid) {
             // ランダムな認証済みトークンを発行
             const sessionToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
