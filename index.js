@@ -31,6 +31,23 @@ app.use((req, res, next) => {
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
+const crypto = require('crypto');
+
+function getStableSecret() {
+    if (process.env.TOTP_SECRET) return process.env.TOTP_SECRET;
+    if (process.env.CHANNEL_SECRET) {
+        // 固定の文字列(環境変数)から安定した16文字のBase32シークレットを生成
+        const hex = crypto.createHash('sha256').update(process.env.CHANNEL_SECRET).digest('hex').substring(0, 16);
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        let b32 = '';
+        for (let i = 0; i < 16; i++) {
+            b32 += chars[parseInt(hex.charAt(i), 16)];
+        }
+        return b32;
+    }
+    return 'JBSWY3DPEHPK3PXP'; // フォールバック
+}
+const SERVER_TOTP_SECRET = getStableSecret();
 
 // otplibの実装
 const { authenticator } = require('@otplib/preset-default');
@@ -81,13 +98,8 @@ let currentConfig = loadConfig();
 
 // 1. 初回設定（秘密鍵の生成とQRコードの返却）
 app.get('/api/auth/setup', async (req, res) => {
-    // 既に設定済みの場合は既存のシークレットを返す（再設定用）
-    const secret = currentConfig.totpSecret || authenticator.generateSecret();
-
-    if (!currentConfig.totpSecret) {
-        currentConfig.totpSecret = secret;
-        saveConfig(currentConfig);
-    }
+    // 安定したシークレット（Render再起動で消えないように環境変数から派生）
+    const secret = SERVER_TOTP_SECRET;
 
     const otpauthUrl = authenticator.keyuri('Admin', 'LINE Order System', secret);
 
@@ -135,12 +147,12 @@ app.use('/api/auth/verify', express.json());
 app.post('/api/auth/verify', (req, res) => {
     const { token } = req.body; // 6桁のコード
 
-    if (!currentConfig.totpSecret) {
+    if (!SERVER_TOTP_SECRET) {
         return res.status(400).json({ error: 'まだ初期設定が完了していません' });
     }
 
     try {
-        const isValid = authenticator.verify({ token, secret: currentConfig.totpSecret });
+        const isValid = authenticator.verify({ token, secret: SERVER_TOTP_SECRET });
         if (isValid) {
             // ランダムな認証済みトークンを発行
             const sessionToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
